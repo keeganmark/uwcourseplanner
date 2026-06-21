@@ -75,6 +75,22 @@ function buildPaletteMenu() {
   custom.addEventListener('click', e => e.stopPropagation());
   bgRow.appendChild(custom);
   menu.appendChild(bgRow);
+
+  // ── Year-card theme section ──
+  menu.appendChild(mk('div', 'pal-divider'));
+  menu.appendChild(mk('div', 'pal-section-label', 'Year card theme'));
+  const ytRow = mk('div', 'bg-swatches');
+  YEAR_THEMES.forEach((t, i) => {
+    const sw = mk('div', 'bg-swatch');
+    // Two-tone swatch: card colour with a semester-colour inset
+    sw.style.background = t.bg;
+    sw.style.boxShadow = `inset 0 -9px 0 ${t.sem}`;
+    if (i === activeYearThemeIdx) sw.classList.add('active');
+    sw.title = t.name;
+    sw.addEventListener('click', e => { e.stopPropagation(); setYearTheme(i); });
+    ytRow.appendChild(sw);
+  });
+  menu.appendChild(ytRow);
 }
 
 function selectPalette(i) {
@@ -136,6 +152,33 @@ function rgbToHex(rgb) {
   const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/i.exec(rgb);
   if (!m) return rgb.toLowerCase();
   return '#' + [m[1],m[2],m[3]].map(v => (+v).toString(16).padStart(2,'0')).join('');
+}
+
+/* ── Year-card theme ─────────────────────────────────────────
+   Changes the look of the year tables (card bg, border, semester bg). */
+const YEAR_THEMES = [
+  { name: 'Indigo (default)', bg: '#161929', border: '#2a2f4a', sem: '#1e2235' },
+  { name: 'Graphite',         bg: '#1c1d22', border: '#34363f', sem: '#26272e' },
+  { name: 'Slate Blue',       bg: '#162032', border: '#2c3a54', sem: '#1d2a40' },
+  { name: 'Teal',             bg: '#0f2222', border: '#1f4040', sem: '#16302e' },
+  { name: 'Plum',             bg: '#231326', border: '#3e2746', sem: '#2e1a33' },
+  { name: 'Crimson',          bg: '#241318', border: '#48232e', sem: '#321a22' },
+  { name: 'Olive',            bg: '#1d2113', border: '#3a4023', sem: '#272c18' },
+  { name: 'Snow',             bg: '#f5f6fa', border: '#d3d8e4', sem: '#e9ecf4', text: '#1e2230' },
+];
+
+let activeYearThemeIdx = 0;
+
+function setYearTheme(i) {
+  activeYearThemeIdx = i;
+  const t = YEAR_THEMES[i];
+  const root = document.documentElement.style;
+  root.setProperty('--year-bg',     t.bg);
+  root.setProperty('--year-border', t.border);
+  root.setProperty('--sem-bg',      t.sem);
+  // Light themes need dark text inside the cards
+  root.setProperty('--year-text', t.text || '');
+  buildPaletteMenu(); // refresh the active-swatch ring
 }
 
 function updatePaletteButton() {
@@ -329,7 +372,13 @@ function startTableResize(e, tableEl) {
 
 function buildSemester(n, courses) {
   const sem = mk('div', 'semester');
-  sem.appendChild(mk('div', 'sem-title', 'Semester ' + n));
+
+  // Header: title (left) + running credit total (top-right)
+  const head = mk('div', 'sem-head');
+  head.appendChild(mk('div', 'sem-title', 'Semester ' + n));
+  const total = mk('span', 'sem-total', '0 cr');
+  head.appendChild(total);
+  sem.appendChild(head);
 
   const list = mk('div', 'course-list');
   courses.forEach(c => {
@@ -345,7 +394,21 @@ function buildSemester(n, courses) {
   addRow.appendChild(addBtn);
   sem.appendChild(addRow);
 
+  // Recompute the total whenever cards are added/removed/moved
+  updateSemesterTotal(sem);
+  new MutationObserver(() => updateSemesterTotal(sem))
+    .observe(list, { childList: true });
+
   return sem;
+}
+
+/* Sum the credits of all course cards in a semester and update its badge */
+function updateSemesterTotal(sem) {
+  const cards = sem.querySelectorAll('.course-list > .course-card');
+  let sum = 0;
+  cards.forEach(c => { sum += parseFloat(c.dataset.credits) || 0; });
+  const badge = sem.querySelector('.sem-total');
+  if (badge) badge.textContent = fmtCredits(sum) + ' cr';
 }
 
 /* ── Course card ─────────────────────────────────────────── */
@@ -473,6 +536,9 @@ function startRename(nameEl, courseEl, creditEl) {
     const cr = courseCredits(v);
     courseEl.dataset.credits = cr;
     if (creditEl) creditEl.textContent = fmtCredits(cr);
+    // Refresh the semester total if this card lives in one
+    const sem = courseEl.closest('.semester');
+    if (sem) updateSemesterTotal(sem);
   };
   inp.addEventListener('keydown', e => {
     if (e.key === 'Enter')  done();
@@ -706,7 +772,7 @@ function clearDropLines(sem) {
 /* ── Export ──────────────────────────────────────────────── */
 
 function serializeSchedule() {
-  const data = { version: 2, years: [], bubbles: [], background: { bg: currentBg, dot: getComputedStyle(document.documentElement).getPropertyValue('--dot').trim() } };
+  const data = { version: 2, years: [], bubbles: [], yearTheme: activeYearThemeIdx, background: { bg: currentBg, dot: getComputedStyle(document.documentElement).getPropertyValue('--dot').trim() } };
 
   document.querySelectorAll('.year-table').forEach(table => {
     const rect = table.getBoundingClientRect();
@@ -799,6 +865,7 @@ function doImport() {
 
   // Restore background if present
   if (data.background?.bg) setBackground(data.background.bg, data.background.dot);
+  if (data.yearTheme != null && YEAR_THEMES[data.yearTheme]) setYearTheme(data.yearTheme);
 
   let yCnt = 0, cCnt = 0;
   (data.years || []).forEach(year => {
@@ -1495,7 +1562,7 @@ function courseCredits(text) {
   const m = /^\s*[A-Za-z]{2,6}\s*\d{1,3}([A-Za-z]?)/.exec(text || '');
   return (m && m[1].toUpperCase() === 'L') ? 0.25 : 0.5;
 }
-function fmtCredits(c) { return c.toFixed(2).replace(/0$/, ''); } // 0.50→0.5, 0.25→0.25
+function fmtCredits(c) { return String(+c.toFixed(2)); } // 0.5, 0.25, 3, 2.75 …
 
 /* ── Search panel ────────────────────────────────────────── */
 
