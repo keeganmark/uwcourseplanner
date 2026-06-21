@@ -243,7 +243,7 @@ function buildYear(data) {
   head.appendChild(badge);
 
   // Drag the whole table from the header
-  head.addEventListener('mousedown', e => {
+  head.addEventListener('pointerdown', e => {
     if (e.target === titleEl || e.target.closest('.rename-input')) return;
     startTableDrag(e, table);
   });
@@ -257,7 +257,7 @@ function buildYear(data) {
 
   // Resize handle
   const resize = mk('div', 'table-resize');
-  resize.addEventListener('mousedown', e => startTableResize(e, table));
+  resize.addEventListener('pointerdown', e => startTableResize(e, table));
   table.appendChild(resize);
 
   document.getElementById('canvas').appendChild(table);
@@ -283,7 +283,7 @@ function startEdit(el) {
     e.stopPropagation();
   });
   inp.addEventListener('blur', done);
-  inp.addEventListener('mousedown', e => e.stopPropagation());
+  inp.addEventListener('pointerdown', e => e.stopPropagation());
 }
 
 /* ── Table drag ──────────────────────────────────────────── */
@@ -355,17 +355,21 @@ function buildCard(name, color) {
   card.style.background = color;
   card.dataset.name  = name;
   card.dataset.color = color;
+  const credits = courseCredits(name);
+  card.dataset.credits = credits;
 
   const nameEl   = mk('span', 'card-name', name);
+  const creditEl = mk('span', 'card-credits', fmtCredits(credits));
   const recolor  = mk('button', 'card-recolor');
   const del      = mk('button', 'card-del', '×');
 
   del.addEventListener('click', e => { e.stopPropagation(); card.remove(); });
   recolor.addEventListener('click', e => { e.stopPropagation(); cycleColor(card); });
-  nameEl.addEventListener('dblclick', e => { e.stopPropagation(); startRename(nameEl, card); });
-  card.addEventListener('mousedown', e => { if (e.target !== del && e.target !== recolor) startDrag(e, card, 'card'); });
+  onDoubleTap(nameEl, () => startRename(nameEl, card, creditEl));
+  card.addEventListener('pointerdown', e => { if (e.target !== del && e.target !== recolor) startDrag(e, card, 'card'); });
 
   card.appendChild(nameEl);
+  card.appendChild(creditEl);
   card.appendChild(recolor);
   card.appendChild(del);
   return card;
@@ -381,20 +385,36 @@ function buildBubble(name, color, x, y) {
   bub.dataset.name  = name;
   bub.dataset.color = color;
 
+  const credits = courseCredits(name);
+  bub.dataset.credits = credits;
+
   const nameEl  = mk('span', 'card-name', name);
+  const creditEl = mk('span', 'card-credits', fmtCredits(credits));
   const recolor = mk('button', 'card-recolor');
   const del     = mk('button', 'card-del', '×');
 
   del.addEventListener('click', e => { e.stopPropagation(); bub.remove(); });
   recolor.addEventListener('click', e => { e.stopPropagation(); cycleColor(bub); });
-  nameEl.addEventListener('dblclick', e => { e.stopPropagation(); startRename(nameEl, bub); });
-  bub.addEventListener('mousedown', e => { if (e.target !== del && e.target !== recolor) startDrag(e, bub, 'bubble'); });
+  onDoubleTap(nameEl, () => startRename(nameEl, bub, creditEl));
+  bub.addEventListener('pointerdown', e => { if (e.target !== del && e.target !== recolor) startDrag(e, bub, 'bubble'); });
 
   bub.appendChild(nameEl);
+  bub.appendChild(creditEl);
   bub.appendChild(recolor);
   bub.appendChild(del);
   document.getElementById('canvas').appendChild(bub);
   return bub;
+}
+
+/* Double-tap / double-click detector that works for mouse, touch and pen */
+function onDoubleTap(el, fn) {
+  let last = 0;
+  el.addEventListener('pointerup', e => {
+    if (D) return; // a real drag is in progress — not a tap
+    const now = Date.now();
+    if (now - last < 320) { e.preventDefault(); e.stopPropagation(); fn(); last = 0; }
+    else last = now;
+  });
 }
 
 /* ── Cycle color ─────────────────────────────────────────── */
@@ -430,12 +450,12 @@ function showAddInput(semEl, btn) {
     else e.stopPropagation();
   });
   inp.addEventListener('blur', () => done(false));
-  inp.addEventListener('mousedown', e => e.stopPropagation());
+  inp.addEventListener('pointerdown', e => e.stopPropagation());
 }
 
 /* ── Rename ──────────────────────────────────────────────── */
 
-function startRename(nameEl, courseEl) {
+function startRename(nameEl, courseEl, creditEl) {
   const orig = nameEl.textContent;
   const inp  = mk('input', 'rename-input');
   inp.type  = 'text';
@@ -449,6 +469,10 @@ function startRename(nameEl, courseEl) {
     const v = inp.value.trim() || orig;
     nameEl.textContent  = v;
     courseEl.dataset.name = v;
+    // Recompute credits from the new name
+    const cr = courseCredits(v);
+    courseEl.dataset.credits = cr;
+    if (creditEl) creditEl.textContent = fmtCredits(cr);
   };
   inp.addEventListener('keydown', e => {
     if (e.key === 'Enter')  done();
@@ -456,7 +480,7 @@ function startRename(nameEl, courseEl) {
     e.stopPropagation();
   });
   inp.addEventListener('blur', done);
-  inp.addEventListener('mousedown', e => e.stopPropagation());
+  inp.addEventListener('pointerdown', e => e.stopPropagation());
 }
 
 /* ── Drag ────────────────────────────────────────────────── */
@@ -501,7 +525,22 @@ function activateDrag(pd, curX, curY) {
   D = { sourceEl, kind, name: sourceEl.dataset.name, color: sourceEl.dataset.color, ox, oy, currentSem: null, insertIdx: -1 };
 }
 
-document.addEventListener('mousemove', e => {
+/* Activate a drag that originated from the search panel (no source element) */
+function activateSearchDrag(pd, curX, curY) {
+  const color = nextColor();
+  const ghost = document.getElementById('ghost');
+  const clone = mk('div', 'bubble');
+  clone.style.cssText = `background:${color};position:relative;left:unset;top:unset;`;
+  clone.appendChild(mk('span', 'card-name', pd.name));
+  ghost.innerHTML = '';
+  ghost.appendChild(clone);
+  ghost.style.left = (curX - pd.ox) + 'px';
+  ghost.style.top  = (curY - pd.oy) + 'px';
+  document.body.style.cursor = 'grabbing';
+  D = { sourceEl: null, kind: 'search', name: pd.name, color, ox: pd.ox, oy: pd.oy, currentSem: null, insertIdx: -1 };
+}
+
+document.addEventListener('pointermove', e => {
   // ── Table resize ──
   if (tableR) {
     const w = Math.max(340, tableR.startW + (e.clientX - tableR.startX));
@@ -523,7 +562,8 @@ document.addEventListener('mousemove', e => {
   // ── Pending drag threshold ──
   if (pendingDrag) {
     if (Math.hypot(e.clientX - pendingDrag.startX, e.clientY - pendingDrag.startY) > 5) {
-      activateDrag(pendingDrag, e.clientX, e.clientY);
+      if (pendingDrag.kind === 'search') activateSearchDrag(pendingDrag, e.clientX, e.clientY);
+      else activateDrag(pendingDrag, e.clientX, e.clientY);
       pendingDrag = null;
       // fall through so D gets its first position update
     } else {
@@ -553,7 +593,7 @@ document.addEventListener('mousemove', e => {
   }
 });
 
-document.addEventListener('mouseup', e => {
+document.addEventListener('pointerup', e => {
   // ── Table resize ──
   if (tableR) {
     tableR.tableEl.classList.remove('resizing-table');
@@ -615,6 +655,17 @@ document.addEventListener('mouseup', e => {
   }
 
   D = null;
+});
+
+/* Reset all drag state if a touch gesture is interrupted (e.g. scroll takes over) */
+document.addEventListener('pointercancel', () => {
+  if (D && D.sourceEl) D.sourceEl.classList.remove('placeholder');
+  if (D && D.currentSem) { D.currentSem.classList.remove('over'); clearDropLines(D.currentSem); }
+  if (tableD) tableD.tableEl.classList.remove('dragging-table');
+  if (tableR) tableR.tableEl.classList.remove('resizing-table');
+  document.getElementById('ghost').innerHTML = '';
+  document.body.style.cursor = '';
+  D = pendingDrag = tableD = tableR = null;
 });
 
 /* ── Drop helpers ────────────────────────────────────────── */
@@ -1417,7 +1468,34 @@ const UW_COURSES = [
   {c:'WKRPT 200',n:'Work-term Report 2'},
   {c:'WKRPT 300',n:'Work-term Report 3'},
   {c:'WKRPT 400',n:'Work-term Report 4'},
+  // ── Course labs (0.25 credits) paired with base courses already listed above ──
+  {c:'PHYS 111L',n:'Physics 1 Laboratory'},
+  {c:'PHYS 112L',n:'Physics 2 Laboratory'},
+  {c:'PHYS 121L',n:'Mechanics Laboratory'},
+  {c:'PHYS 122L',n:'Waves, Electricity and Magnetism Laboratory'},
+  {c:'PHYS 175L',n:'Introduction to the Universe Laboratory'},
+  {c:'PHYS 391L',n:'Electronics Laboratory'},
+  {c:'BIOL 240L',n:'Microbiology Laboratory'},
+  {c:'BIOL 373L',n:'Human Physiology Laboratory'},
+  {c:'CHEM 237L',n:'Introductory Biochemistry Laboratory'},
+  {c:'CHEM 262L',n:'Organic Chemistry Laboratory for Engineering Students'},
+  {c:'CHEM 266L',n:'Organic Chemistry Laboratory'},
+  {c:'CHEM 267L',n:'Organic Chemistry Laboratory'},
+  {c:'CHEM 310L',n:'Inorganic Chemistry Laboratory 2'},
+  {c:'CHEM 313L',n:'Inorganic Chemistry Laboratory 1'},
+  {c:'CHEM 360L',n:'Senior Organic Chemistry Laboratory'},
+  {c:'EARTH 121L',n:'Introductory Earth Sciences Laboratory'},
+  {c:'EARTH 122L',n:'Introductory Environmental Sciences Laboratory'},
+  {c:'EARTH 458L',n:'Field Methods in Hydrogeology'},
 ];
+
+/* ── Credits ─────────────────────────────────────────────────
+   Default course = 0.5 credits. Lab (code ends in 'L') = 0.25. */
+function courseCredits(text) {
+  const m = /^\s*[A-Za-z]{2,6}\s*\d{1,3}([A-Za-z]?)/.exec(text || '');
+  return (m && m[1].toUpperCase() === 'L') ? 0.25 : 0.5;
+}
+function fmtCredits(c) { return c.toFixed(2).replace(/0$/, ''); } // 0.50→0.5, 0.25→0.25
 
 /* ── Search panel ────────────────────────────────────────── */
 
@@ -1452,7 +1530,10 @@ function runSearch(q) {
   hits.forEach(r => {
     const fullName = r.c + ' – ' + r.n;
     const item = mk('div', 'sp-item');
-    item.appendChild(mk('div', 'sp-item-code', r.c));
+    const codeRow = mk('div', 'sp-item-coderow');
+    codeRow.appendChild(mk('span', 'sp-item-code', r.c));
+    codeRow.appendChild(mk('span', 'sp-item-credits', fmtCredits(courseCredits(r.c)) + ' cr'));
+    item.appendChild(codeRow);
     item.appendChild(mk('div', 'sp-item-name', r.n));
 
     // Click → drop as bubble near centre of view
@@ -1465,21 +1546,11 @@ function runSearch(q) {
       buildBubble(fullName, nextColor(), Math.max(0, x), Math.max(0, y));
     });
 
-    // Drag → same pipeline as course drag, but sourced from search panel
-    item.addEventListener('mousedown', e => {
+    // Press-and-drag onto a semester; a plain tap/click adds it centred (see above).
+    // Uses the movement threshold so a tap still fires the click handler (no double-add).
+    item.addEventListener('pointerdown', e => {
       if (e.button !== 0) return;
-      e.preventDefault();
-      const color = nextColor();
-      const ghost = document.getElementById('ghost');
-      const clone = mk('div', 'bubble');
-      clone.style.cssText = `background:${color};position:relative;left:unset;top:unset;`;
-      clone.appendChild(mk('span', 'card-name', fullName));
-      ghost.innerHTML = '';
-      ghost.appendChild(clone);
-      ghost.style.left = (e.clientX - 20) + 'px';
-      ghost.style.top  = (e.clientY - 16) + 'px';
-      document.body.style.cursor = 'grabbing';
-      D = { sourceEl: null, kind: 'search', name: fullName, color, ox: 20, oy: 16, currentSem: null, insertIdx: -1 };
+      pendingDrag = { kind: 'search', name: fullName, ox: 20, oy: 16, startX: e.clientX, startY: e.clientY };
     });
 
     out.appendChild(item);
