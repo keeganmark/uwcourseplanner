@@ -15,6 +15,7 @@
   --accent: #7c6fff;
   --text:   #dde1f5;
   --muted:  #6370a0;
+  --dot:    #252945;
 }
 
 body {
@@ -93,7 +94,7 @@ body {
   min-height: 2200px;
   padding: 52px 52px 200px;
   background-color: var(--bg);
-  background-image: radial-gradient(circle, #252945 1px, transparent 1px);
+  background-image: radial-gradient(circle, var(--dot) 1px, transparent 1px);
   background-size: 30px 30px;
 }
 
@@ -106,15 +107,45 @@ body {
   border-radius: 16px;
   padding: 22px;
   width: 560px;
+  min-width: 340px;
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
   transition: box-shadow .15s;
   z-index: 10;
 }
 .year-table:hover { box-shadow: 0 0 0 1.5px var(--accent); }
-.year-table.dragging-table {
+.year-table.dragging-table,
+.year-table.resizing-table {
   box-shadow: 0 16px 40px rgba(0,0,0,.55);
-  opacity: .93;
+  opacity: .96;
   z-index: 500;
 }
+
+/* Resize handle (bottom-right corner) */
+.table-resize {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  opacity: 0;
+  transition: opacity .15s;
+  border-radius: 0 0 12px 0;
+}
+.table-resize::after {
+  content: '';
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 9px;
+  height: 9px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+}
+.year-table:hover .table-resize { opacity: .8; }
+.table-resize:hover::after { border-color: var(--accent); }
 
 .table-head {
   display: flex;
@@ -162,6 +193,7 @@ body {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
+  flex: 1;
 }
 
 /* ── Semester column ─────────────────────────────────── */
@@ -427,6 +459,65 @@ body {
   height: 13px;
   border-radius: 50%;
 }
+
+.pal-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 7px 4px;
+}
+.pal-section-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .7px;
+  color: var(--muted);
+  padding: 2px 10px 6px;
+}
+.pal-action-btn {
+  width: calc(100% - 8px);
+  margin: 0 4px;
+  padding: 8px 10px;
+  background: var(--surf2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background .12s, border-color .12s;
+}
+.pal-action-btn:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.bg-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 2px 10px 6px;
+  align-items: center;
+}
+.bg-swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: transform .12s, border-color .12s;
+}
+.bg-swatch:hover  { transform: scale(1.12); }
+.bg-swatch.active { border-color: var(--accent); }
+.bg-custom {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1.5px dashed var(--muted);
+  border-radius: 7px;
+  background: none;
+  cursor: pointer;
+}
+.bg-custom::-webkit-color-swatch-wrapper { padding: 2px; }
+.bg-custom::-webkit-color-swatch { border: none; border-radius: 4px; }
 
 /* ── Search panel ────────────────────────────────────────── */
 
@@ -824,6 +915,35 @@ function buildPaletteMenu() {
     row.addEventListener('click', () => selectPalette(i));
     menu.appendChild(row);
   });
+
+  // ── Recolor-all action ──
+  menu.appendChild(mk('div', 'pal-divider'));
+  const recolorBtn = mk('button', 'pal-action-btn', '🎨 Recolor all courses');
+  recolorBtn.title = 'Apply the current palette to every existing course';
+  recolorBtn.addEventListener('click', e => { e.stopPropagation(); recolorAllCourses(); });
+  menu.appendChild(recolorBtn);
+
+  // ── Background section ──
+  menu.appendChild(mk('div', 'pal-divider'));
+  menu.appendChild(mk('div', 'pal-section-label', 'Background'));
+  const bgRow = mk('div', 'bg-swatches');
+  BG_PRESETS.forEach((bg, i) => {
+    const sw = mk('div', 'bg-swatch');
+    sw.style.background = bg.bg;
+    if (bg.bg.toLowerCase() === currentBg.toLowerCase()) sw.classList.add('active');
+    sw.title = bg.name;
+    sw.addEventListener('click', e => { e.stopPropagation(); setBackground(bg.bg, bg.dot); });
+    bgRow.appendChild(sw);
+  });
+  // Custom color picker
+  const custom = mk('input', 'bg-custom');
+  custom.type = 'color';
+  custom.value = /^#[0-9a-f]{6}$/i.test(currentBg) ? currentBg : '#0d0f1a';
+  custom.title = 'Custom background color';
+  custom.addEventListener('input', e => setBackground(e.target.value, autoDot(e.target.value)));
+  custom.addEventListener('click', e => e.stopPropagation());
+  bgRow.appendChild(custom);
+  menu.appendChild(bgRow);
 }
 
 function selectPalette(i) {
@@ -831,7 +951,60 @@ function selectPalette(i) {
   pidx = 0;
   updatePaletteButton();
   buildPaletteMenu();
-  document.getElementById('palette-menu').classList.remove('open');
+  // Menu stays open so you can immediately "Recolor all" or tweak the background.
+}
+
+/* Recolor every existing course/bubble using the active palette */
+function recolorAllCourses() {
+  const pal = currentPalette();
+  let i = 0;
+  document.querySelectorAll('.course-card, .bubble').forEach(el => {
+    const color = pal[i++ % pal.length];
+    el.style.background = color;
+    el.dataset.color = color;
+  });
+}
+
+/* ── Background ──────────────────────────────────────────── */
+
+const BG_PRESETS = [
+  { name: 'Midnight',  bg: '#0d0f1a', dot: '#252945' },
+  { name: 'Charcoal',  bg: '#16181d', dot: '#2e323c' },
+  { name: 'Slate',     bg: '#1a2230', dot: '#33415c' },
+  { name: 'Deep Plum', bg: '#1a1320', dot: '#3a2b45' },
+  { name: 'Forest',    bg: '#0f1a15', dot: '#23402f' },
+  { name: 'Navy',      bg: '#0a1530', dot: '#1e3a6b' },
+  { name: 'Paper',     bg: '#f4f1ea', dot: '#d2cdbf' },
+  { name: 'Mist',      bg: '#e6ecf2', dot: '#c3ccd6' },
+];
+
+let currentBg = '#0d0f1a';
+
+function setBackground(bg, dot) {
+  currentBg = bg;
+  document.documentElement.style.setProperty('--bg',  bg);
+  document.documentElement.style.setProperty('--dot', dot || autoDot(bg));
+  // Update the active swatch ring without rebuilding the whole menu
+  document.querySelectorAll('.bg-swatch').forEach(sw => {
+    sw.classList.toggle('active', sw.style.background && rgbToHex(sw.style.background) === bg.toLowerCase());
+  });
+}
+
+/* Derive a subtle dot color from a background color */
+function autoDot(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return '#252945';
+  let r = parseInt(m[1].slice(0,2),16), g = parseInt(m[1].slice(2,4),16), b = parseInt(m[1].slice(4,6),16);
+  const light = (r*0.299 + g*0.587 + b*0.114) > 140;
+  const shift = light ? -38 : 30;            // darken on light bg, lighten on dark bg
+  const cl = v => Math.max(0, Math.min(255, v + shift));
+  return '#' + [cl(r),cl(g),cl(b)].map(v => v.toString(16).padStart(2,'0')).join('');
+}
+
+function rgbToHex(rgb) {
+  const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/i.exec(rgb);
+  if (!m) return rgb.toLowerCase();
+  return '#' + [m[1],m[2],m[3]].map(v => (+v).toString(16).padStart(2,'0')).join('');
 }
 
 function updatePaletteButton() {
@@ -886,6 +1059,8 @@ let yearCount = 0;
 /* ── Init ────────────────────────────────────────────────── */
 
 function init() {
+  // Keep clicks inside the palette menu from closing it (palette/recolor/bg controls)
+  document.getElementById('palette-menu').addEventListener('click', e => e.stopPropagation());
   updatePaletteButton();
   buildPaletteMenu();
   STARTERS.forEach(d => buildYear(d));
@@ -916,6 +1091,10 @@ function buildYear(data) {
     table.style.top  = (52 + row * 520) + 'px';
   }
 
+  // Restore saved size (width fixed, height as min so content can still auto-grow)
+  if (data.w != null) table.style.width = data.w + 'px';
+  if (data.h != null) table.style.minHeight = data.h + 'px';
+
   // Header with grip + editable title + badge
   const head = mk('div', 'table-head');
 
@@ -944,6 +1123,11 @@ function buildYear(data) {
   semsEl.appendChild(buildSemester(1, data.s1 || []));
   semsEl.appendChild(buildSemester(2, data.s2 || []));
   table.appendChild(semsEl);
+
+  // Resize handle
+  const resize = mk('div', 'table-resize');
+  resize.addEventListener('mousedown', e => startTableResize(e, table));
+  table.appendChild(resize);
 
   document.getElementById('canvas').appendChild(table);
 }
@@ -988,6 +1172,26 @@ function startTableDrag(e, tableEl) {
   };
   tableEl.classList.add('dragging-table');
   document.body.style.cursor = 'grabbing';
+}
+
+/* ── Table resize ────────────────────────────────────────── */
+
+let tableR = null;
+
+function startTableResize(e, tableEl) {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const rect = tableEl.getBoundingClientRect();
+  tableR = {
+    tableEl,
+    startX: e.clientX,
+    startY: e.clientY,
+    startW: rect.width,
+    startH: rect.height,
+  };
+  tableEl.classList.add('resizing-table');
+  document.body.style.cursor = 'nwse-resize';
 }
 
 /* ── Semester ────────────────────────────────────────────── */
@@ -1167,6 +1371,15 @@ function activateDrag(pd, curX, curY) {
 }
 
 document.addEventListener('mousemove', e => {
+  // ── Table resize ──
+  if (tableR) {
+    const w = Math.max(340, tableR.startW + (e.clientX - tableR.startX));
+    const h = Math.max(160, tableR.startH + (e.clientY - tableR.startY));
+    tableR.tableEl.style.width     = w + 'px';
+    tableR.tableEl.style.minHeight = h + 'px';
+    return;
+  }
+
   // ── Table drag ──
   if (tableD) {
     const canvas = document.getElementById('canvas');
@@ -1210,6 +1423,14 @@ document.addEventListener('mousemove', e => {
 });
 
 document.addEventListener('mouseup', e => {
+  // ── Table resize ──
+  if (tableR) {
+    tableR.tableEl.classList.remove('resizing-table');
+    document.body.style.cursor = '';
+    tableR = null;
+    return;
+  }
+
   // ── Table drag ──
   if (tableD) {
     tableD.tableEl.classList.remove('dragging-table');
@@ -1303,10 +1524,11 @@ function clearDropLines(sem) {
 /* ── Export ──────────────────────────────────────────────── */
 
 function serializeSchedule() {
-  const data = { version: 2, years: [], bubbles: [] };
+  const data = { version: 2, years: [], bubbles: [], background: { bg: currentBg, dot: getComputedStyle(document.documentElement).getPropertyValue('--dot').trim() } };
 
   document.querySelectorAll('.year-table').forEach(table => {
-    const year = { label: table.querySelector('.table-title').textContent, x: parseFloat(table.style.left)||0, y: parseFloat(table.style.top)||0, semesters: [] };
+    const rect = table.getBoundingClientRect();
+    const year = { label: table.querySelector('.table-title').textContent, x: parseFloat(table.style.left)||0, y: parseFloat(table.style.top)||0, w: Math.round(rect.width), h: Math.round(rect.height), semesters: [] };
     table.querySelectorAll('.semester').forEach((sem, i) => {
       const courses = [];
       sem.querySelectorAll('.course-card').forEach(card => {
@@ -1393,11 +1615,14 @@ function doImport() {
     pidx = 0;
   }
 
+  // Restore background if present
+  if (data.background?.bg) setBackground(data.background.bg, data.background.dot);
+
   let yCnt = 0, cCnt = 0;
   (data.years || []).forEach(year => {
     const s1 = year.semesters?.[0]?.courses || [];
     const s2 = year.semesters?.[1]?.courses || [];
-    buildYear({ label: year.label, s1, s2, x: year.x, y: year.y });
+    buildYear({ label: year.label, s1, s2, x: year.x, y: year.y, w: year.w, h: year.h });
     yCnt++;
     cCnt += s1.length + s2.length;
   });
