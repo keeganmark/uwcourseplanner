@@ -165,8 +165,8 @@ document.addEventListener('click', () => {
 const STARTERS = [
   {
     label: 'Year 1',
-    s1: ['NE 100 – Intro to Nanotechnology Eng.','NE 109 – Societal & Environmental Impacts','NE 111 – Intro to Programming for Eng.','NE 112 – Linear Algebra for Nano Eng.','NE 121 – Chemical Principles','MATH 117 – Calculus 1 for Engineering'],
-    s2: ['NE 110 – Nanomaterials Health Risks','NE 113 – Intro to Computational Methods','NE 125 – Intro to Materials Science & Eng.','NE 131 – Physics for Nano Engineering','NE 140 – Linear Circuits','MATH 119 – Calculus 2 for Engineering'],
+    s1: ['MATH 117 – Calculus 1 for Engineering','MATH 115 – Linear Algebra for Engineering','CHEM 120 – General Chemistry 1','PHYS 111 – Physics 1','CS 137 – Programming Principles','ENGL 119 – Communications in Math & CS'],
+    s2: ['MATH 119 – Calculus 2 for Engineering','CHEM 123 – General Chemistry 2','PHYS 112 – Physics 2','CS 138 – Data Abstraction & Implementation','ECE 140 – Linear Circuits','SPCOM 100 – Interpersonal Communication'],
   },
   {
     label: 'Year 2',
